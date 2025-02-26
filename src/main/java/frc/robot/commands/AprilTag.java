@@ -1,170 +1,78 @@
 package frc.robot.commands;
 
-import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj2.command.Command;
 import frc.robot.subsystems.CANDriveSubsystem;
+import frc.robot.subsystems.VisionSubsystem;
 
+// made by justin, command for auto driving and rotating toward an AprilTag using Limelight until the tag is lost
 public class AprilTag extends Command {
+    private final CANDriveSubsystem driveSubsystem;
+    private final VisionSubsystem visionSubsystem;
+    private final double targetDistance;
+    private final PIDController pidForward;
+    private final PIDController pidTurn;
+    private double forwardSpeed;
+    private double rotationSpeed;
 
-    public enum RobotState {
-        IDENTIFYTAG, APPROACH, FORWARD, ROTATELR, CENTERPID
-    }
-
-    // Autonomous state variables and timer
-    private RobotState autostate;
-    private final Timer autotimer;
-    private long tagid;
-    private boolean tagL;
-
-    // Reference to the drive subsystem (assumed to have an arcadeDrive method and sensor access)
-    private final CANDriveSubsystem drive;
-
-    // Example threshold for encoder velocity (adjust as necessary)
-    private double thresh = 0.5;
-    private double SonicRangeDistance = 1.5;
-
-    // Variables used in state logic, initialized from NetworkTables.
-    // For a double array value, use getDoubleArray(...) with an empty default array.
-    private double[] targetpose = NetworkTableInstance.getDefault()
-            .getTable("limelight")
-            .getEntry("targetpose_robotspace")
-            .getDoubleArray(new double[6]);
-    // 'tx' reading (assumed to be updated periodically; you may need to refresh these values in execute)
-    private double tx = NetworkTableInstance.getDefault()
-            .getTable("limelight")
-            .getEntry("tx")
-            .getDouble(0);
-    // 'tz' reading from which we compute the absolute value as within_sonic_range.
-    private double ty = NetworkTableInstance.getDefault()
-            .getTable("limelight")
-            .getEntry("ty")
-            .getDouble(0);
-    private boolean within_sonic_range;
-    public AprilTag(CANDriveSubsystem drive) {
-        this.drive = drive;
-        addRequirements(drive);
-
-        autostate = RobotState.IDENTIFYTAG;
-        autotimer = new Timer();
-        autotimer.start();
+    public AprilTag(CANDriveSubsystem driveSubsystem, VisionSubsystem visionSubsystem, double targetDistance) {
+        this.driveSubsystem = driveSubsystem;
+        this.visionSubsystem = visionSubsystem;
+        this.targetDistance = targetDistance;
+        // PID controller for driving forward; tune these constants as needed
+        this.pidForward = new PIDController(0.0025, 0, 0);
+        // PID controller for turning; tune these constants as needed (e.g., using degrees error)
+        this.pidTurn = new PIDController(0.02, 0, 0);
+        addRequirements(driveSubsystem, visionSubsystem);
     }
 
     @Override
     public void initialize() {
-        autotimer.reset();
-        autotimer.start();
+        pidForward.reset();
+        pidTurn.reset();
+        SmartDashboard.putNumber("TargetDistance", targetDistance);
     }
 
     @Override
     public void execute() {
-        // Update vision values from NetworkTables if needed
-        targetpose = NetworkTableInstance.getDefault()
-                .getTable("limelight")
-                .getEntry("targetpose_robotspace")
-                .getDoubleArray(new double[0]);
-        tx = NetworkTableInstance.getDefault()
-                .getTable("limelight")
-                .getEntry("tx")
-                .getDouble(0);
-        ty = NetworkTableInstance.getDefault()
-                .getTable("limelight")
-                .getEntry("ty")
-                .getDouble(0);
-        within_sonic_range = Math.abs(ty) > SonicRangeDistance;
+        // Use Limelight data via the VisionSubsystem to check for an AprilTag and its properties
+        if (visionSubsystem.isTargetVisible()) {
+            // Get current distance from the target as computed by the Limelight
+            double currentDistance = visionSubsystem.getTargetDistance();
+            // Calculate the forward PID output to drive toward the target distance
+            forwardSpeed = pidForward.calculate(currentDistance, targetDistance);
 
-        // Determine if a valid target is found (make sure targetpose has at least 3 elements)
-        boolean target_found = (targetpose != null && targetpose.length > 2 && targetpose[2] != 0);
+            // Get the horizontal offset (angle) from the crosshair to the target (in degrees)
+            double targetAngle = visionSubsystem.getTargetAngle();
+            // Calculate the turning correction (aiming to reduce the angle to 0)
+            rotationSpeed = pidTurn.calculate(targetAngle, 0);
 
-        if (autostate == RobotState.IDENTIFYTAG) {
-            SmartDashboard.putString("State", "Identify Tag");
-            if (autotimer.get() > 1.5 && target_found) {
-                autostate = RobotState.FORWARD;
-                tagid = NetworkTableInstance.getDefault()
-                        .getTable("limelight")
-                        .getEntry("tid")
-                        .getInteger(0);
-            } else {
-                double timerValue = autotimer.get();
-                if (timerValue < 1) {
-                    drive.ArcadeDrive(drive,() -> 0.5, () -> 0.0) ;
-                } else if (timerValue < 1.5) {
-                    drive.ArcadeDrive(drive, () -> 0, () -> -0.35);
-                } else if (timerValue < 2) {
-                    drive.ArcadeDrive(drive,() ->0, () ->0);
-                } else if (timerValue < 2.5) {
-                    drive.ArcadeDrive(drive,() ->0, () ->-0.35);
-                } else if (timerValue < 3) {
-                    drive.ArcadeDrive(drive,() ->0, () ->0);
-                } else if (timerValue < 3.5) {
-                    drive.ArcadeDrive(drive, () ->0, () ->-0.35);
-                } else {
-                    drive.ArcadeDrive(drive, () -> 0, () -> 0);
-                }
-            }
-        } else if (autostate == RobotState.APPROACH) {
-            SmartDashboard.putString("State", "Approach");
-            drive.ArcadeDrive(drive, () ->0, () ->0);
-            boolean leftSet = false;
-            boolean rightSet = false;
+            // Combine forward and rotation speeds for differential drive
+            double leftSpeed = forwardSpeed + rotationSpeed;
+            double rightSpeed = forwardSpeed - rotationSpeed;
+            driveSubsystem.setSpeed(leftSpeed, rightSpeed);
 
-            // Replace these calls with your actual sensor methods from your drive subsystem.
-            if (Math.abs(drive.leftCurrentVelo()) > thresh) {
-                drive.setSpeed(0.1, 0);
-            } else {
-                leftSet = true;
-                drive.setSpeed(0, 0);
-            }
-
-            if (Math.abs(drive.rightCurrentVelo()) > thresh) {
-                drive.setSpeed(0, 0.1);
-            } else {
-                rightSet = true;
-                drive.setSpeed(0, 0);
-            }
-
-            // Conveyor control code was commented out in your original snippet.
-        } else if (autostate == RobotState.FORWARD) {
-            SmartDashboard.putString("State", "Forward");
-            drive.ArcadeDrive(drive, () ->0.4, () ->0);
-            if (target_found) {
-                tagL = (tx < 0);
-                // Transition condition – adjust the check on within_sonic_range as needed.
-                if (within_sonic_range != true) {
-                    autostate = RobotState.CENTERPID;
-                }
-            } else {
-                autostate = RobotState.ROTATELR;
-            }
-        } else if (autostate == RobotState.ROTATELR) {
-            SmartDashboard.putString("State", "Rotation");
-            if (tagL) {
-                drive.ArcadeDrive(drive, () ->0, () ->-0.25);
-            } else {
-                drive.ArcadeDrive(drive, () ->0,() -> 0.25);
-            }
-            if (target_found) {
-                autostate = RobotState.CENTERPID;
-            }
-        } else if (autostate == RobotState.CENTERPID) {
-            SmartDashboard.putString("State", "Centering");
-            // If tx is 0 (or use an appropriate null/invalid check), revert to rotation.
-            if (tx == 0) {
-                autostate = RobotState.ROTATELR;
-                return;
-            }
-            // Additional centering logic can be implemented here.
+            // Output values to SmartDashboard for tuning/monitoring
+            SmartDashboard.putNumber("ForwardPIDOutput", forwardSpeed);
+            SmartDashboard.putNumber("RotationPIDOutput", rotationSpeed);
+            SmartDashboard.putNumber("CurrentTagDistance", currentDistance);
+            SmartDashboard.putNumber("TargetAngle", targetAngle);
+        } else {
+            // If the target is lost, stop the robot
+            driveSubsystem.setSpeed(0, 0);
         }
     }
 
     @Override
     public void end(boolean interrupted) {
-        drive.ArcadeDrive(drive, () ->0,() -> 0);
+        // Stop the robot when the command ends or is interrupted
+        driveSubsystem.setSpeed(0, 0);
     }
 
     @Override
     public boolean isFinished() {
-        return false;
+        // Finish the command when the Limelight no longer sees the AprilTag
+        return !visionSubsystem.isTargetVisible();
     }
 }
