@@ -4,6 +4,7 @@
 
 package frc.robot;
 
+import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.*;
@@ -31,6 +32,7 @@ public class RobotContainer {
     private final PivotSubSystem pivotSubSystem = new PivotSubSystem();
     private final AlgaeSubSystem algaeSubSystem = new AlgaeSubSystem();
     private final AlageRollerSubsystem alageRollerSubsystem = new AlageRollerSubsystem();
+    private final VisionSubsystem visionSubsystem = new VisionSubsystem();
 
     // The driver's controller
     private final CommandXboxController driverController = new CommandXboxController(
@@ -66,8 +68,7 @@ public class RobotContainer {
                         new ElevatorPID(elevatorSubSystems, Constants.ElevatorConstants.encoderSetpoint)),
                 new SequentialCommandGroup(
                         new AutoRoller(rollerSubsystem,Constants.RollerConstants.ROLLER_EJECT_VALUE))));
-        autoChooser.addOption("AprilTag Test", new SequentialCommandGroup(new AprilTag(driveSubsystem)
-));
+        autoChooser.addOption("AprilTag Test", new SequentialCommandGroup(new AprilTag(driveSubsystem, visionSubsystem, visionSubsystem.getTargetDistance())));
     }
 
     /**

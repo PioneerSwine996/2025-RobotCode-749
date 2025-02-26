@@ -9,7 +9,10 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 public class VisionSubsystem extends SubsystemBase {
 
     private final NetworkTable limelightTable;
-    private final double[] LimelightTable = NetworkTableInstance.getDefault().getTable("limelight").getEntry("<botpose_targetspace>").getDoubleArray(new double[6]);
+    private double[] targetpose = NetworkTableInstance.getDefault()
+            .getTable("limelight")
+            .getEntry("targetpose_robotspace")
+            .getDoubleArray(new double[6]);
 
     // These parameters should be tuned to match your robot and target setup.
     private final double targetHeight = 2.5;   // Height of the target in meters (example)
@@ -19,6 +22,10 @@ public class VisionSubsystem extends SubsystemBase {
     public VisionSubsystem() {
         // Connect to the limelight NetworkTable
         limelightTable = NetworkTableInstance.getDefault().getTable("limelight");
+        targetpose = NetworkTableInstance.getDefault()
+                .getTable("limelight")
+                .getEntry("targetpose_robotspace")
+                .getDoubleArray(new double[0]);
     }
 
     /**
@@ -48,14 +55,14 @@ public class VisionSubsystem extends SubsystemBase {
     public double getTargetDistance() {
         // "ty" gives the vertical offset from crosshair to target.
         double ty = limelightTable.getEntry("ty").getDouble(0.0);
-        double angleToTargetRadians = Math.toRadians(cameraAngle + ty);
+        double angleToTargetRadians = Math.toRadians(targetpose[4] + ty);
 
         // Prevent division by zero.
         if (Math.tan(angleToTargetRadians) == 0) {
             return 0;
         }
 
-        double distance = NetworkTable;
+        double distance = targetpose[0];
         SmartDashboard.putNumber("Target Distance", distance);
         return distance;
     }
