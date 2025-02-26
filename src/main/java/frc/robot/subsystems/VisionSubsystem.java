@@ -1,6 +1,7 @@
 package frc.robot.subsystems;
 
 import edu.wpi.first.networktables.NetworkTable;
+import edu.wpi.first.networktables.NetworkTableEntry;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
@@ -8,6 +9,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 public class VisionSubsystem extends SubsystemBase {
 
     private final NetworkTable limelightTable;
+    private final double[] LimelightTable = NetworkTableInstance.getDefault().getTable("limelight").getEntry("<botpose_targetspace>").getDoubleArray(new double[6]);
 
     // These parameters should be tuned to match your robot and target setup.
     private final double targetHeight = 2.5;   // Height of the target in meters (example)
@@ -53,7 +55,7 @@ public class VisionSubsystem extends SubsystemBase {
             return 0;
         }
 
-        double distance = limelightTable.getEntry("targetpose_robotspace").getDouble(0.0);
+        double distance = NetworkTable;
         SmartDashboard.putNumber("Target Distance", distance);
         return distance;
     }
